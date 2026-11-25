@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>生物学院 · AR 生命伙伴</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%90%A7%3C/text%3E%3C/svg%3E">
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #08120f; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; color: #eaf6f1; }
+
+  a-scene { position: fixed; inset: 0; }
+
+  #intro {
+    position: fixed; inset: 0; z-index: 50;
+    display: flex; align-items: center; justify-content: center; padding: 24px;
+    background: radial-gradient(120% 90% at 50% 0%, #17463a 0%, #0a1a15 55%, #050b09 100%);
+    transition: opacity .45s ease;
+  }
+  #intro.fade { opacity: 0; pointer-events: none; }
+  .card { width: 100%; max-width: 420px; text-align: center; }
+  .badge {
+    display: inline-block; padding: 6px 14px; border-radius: 999px; font-size: 12px; letter-spacing: 2px;
+    color: #2ee6a8; border: 1px solid rgba(46,230,168,.45); background: rgba(46,230,168,.08); margin-bottom: 22px;
+  }
+  h1 { font-size: 26px; line-height: 1.35; margin: 0 0 14px; font-weight: 700; letter-spacing: 1px; }
+  h1 span { color: #2ee6a8; }
+  #intro p { margin: 0 0 26px; font-size: 14px; line-height: 1.7; color: #a9c4ba; }
+  #startBtn {
+    width: 100%; padding: 16px; border: 0; border-radius: 14px; font-size: 17px; font-weight: 700; color: #04211a;
+    background: linear-gradient(135deg, #6cf5c4 0%, #22c893 100%); box-shadow: 0 12px 28px rgba(34,200,147,.28);
+    cursor: pointer; transition: transform .15s ease, box-shadow .15s ease;
+  }
+  #startBtn:active { transform: scale(.97); box-shadow: 0 6px 16px rgba(34,200,147,.22); }
+  .tips { margin: 18px 0 0 !important; font-size: 12px !important; color: #6d8479 !important; line-height: 1.6 !important; }
+
+  #hint {
+    position: fixed; left: 50%; bottom: calc(28px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+    z-index: 30; padding: 12px 20px; border-radius: 999px; font-size: 14px; white-space: nowrap;
+    background: rgba(6,20,16,.72); border: 1px solid rgba(46,230,168,.3); backdrop-filter: blur(10px);
+    color: #d8f5ea; transition: opacity .35s ease, transform .35s ease;
+  }
+  #hint.hide { opacity: 0; transform: translateX(-50%) translateY(12px); pointer-events: none; }
+  #hint b { color: #2ee6a8; font-weight: 600; }
+
+  #err {
+    position: fixed; inset: 0; z-index: 60; display: none; align-items: center; justify-content: center; padding: 28px;
+    background: rgba(6,12,10,.94); text-align: center; font-size: 14px; line-height: 1.8;
+  }
+  #err.show { display: flex; }
+  #err .box { max-width: 380px; }
+  #err h2 { font-size: 17px; color: #ff9b8a; margin: 0 0 10px; }
+  #err p { color: #9db3aa; margin: 0; }
+
+  #retry {
+    position: fixed; right: 16px; top: calc(16px + env(safe-area-inset-top)); z-index: 30;
+    padding: 9px 15px; border-radius: 999px; font-size: 13px; color: #cdeee1;
+    background: rgba(6,20,16,.66); border: 1px solid rgba(255,255,255,.16); backdrop-filter: blur(8px);
+  }
+  .hidden { display: none !important; }
+</style>
+<script src="assets/vendor/aframe.min.js"></script>
+<script src="assets/vendor/mindar-image-aframe.prod.js"></script>
+</head>
+<body>
+
+<div id="intro">
+  <div class="card">
+    <div class="badge">WEB AR</div>
+    <h1>扫描海报<br>唤醒 <span>生命伙伴</span></h1>
+    <p>对准「生物学院」海报，让整张画面放入取景框<br>它会从海报里走出来，为你跳一支舞</p>
+    <button id="startBtn">开启 AR 摄像头</button>
+    <p class="tips">需要摄像头权限 · 建议使用 Safari / Chrome 打开</p>
+  </div>
+</div>
+
+<div id="hint"><b>对准海报</b> · 让整张画面进入取景框</div>
+<div id="retry" class="hidden">重新扫描</div>
+
+<div id="err">
+  <div class="box">
+    <h2 id="errTitle">摄像头无法启动</h2>
+    <p id="errMsg">请确认已允许摄像头权限，并通过 HTTPS 链接访问</p>
+  </div>
+</div>
+
+<a-scene
+  id="arScene"
+  mindar-image="imageTargetSrc: assets/target.mind; autoStart: false; uiLoading: no; uiError: no; uiScanning: no; filterMinCF: 0.0001; filterBeta: 0.001; missTolerance: 6; warmupTolerance: 4"
+  color-space="sRGB"
+  renderer="antialias: true, colorManagement: true, logarithmicDepthBuffer: false, physicallyCorrectLights: false"
+  vr-mode-ui="enabled: false"
+  device-orientation-permission-ui="enabled: false"
+  loading-screen="enabled: false">
+
+  <a-assets timeout="15000">
+    <a-asset-item id="dancerGLB" src="assets/model_opt.glb"></a-asset-item>
+    <img id="posterTex" src="assets/poster.jpg" crossorigin="anonymous">
+  </a-assets>
+
+  <a-entity light="type: ambient; color: #ffffff; intensity: 1.05"></a-entity>
+  <a-entity light="type: hemisphere; color: #f2fffb; groundColor: #2a4a3f; intensity: 0.6"></a-entity>
+  <a-entity light="type: directional; color: #ffffff; intensity: 1.35" position="0.6 1.4 1.6"></a-entity>
+  <a-entity light="type: directional; color: #9ceccb; intensity: 0.5" position="-1.2 0.6 1"></a-entity>
+
+  <a-camera position="0 0 0" look-controls="enabled: false" wasd-controls="enabled: false" cursor="fuse: false"></a-camera>
+
+  <a-entity id="targetEntity" mindar-image-target="targetIndex: 0">
+    <!-- 海报遮挡平面：与识别图同尺寸，角色从其后浮出 -->
+    <a-plane id="occluder" width="1" height="1.3331" position="0 0 0.0015"
+             material="src: #posterTex; shader: flat; side: double; transparent: false; opacity: 1"></a-plane>
+
+    <!-- 角色挂点：沿 +Z 浮出 -->
+    <a-entity id="pivot" position="0 0 -0.55">
+      <a-gltf-model id="dancer" src="#dancerGLB" scale="1 1 1" rotation="0 0 0"></a-gltf-model>
+    </a-entity>
+  </a-entity>
+</a-scene>
+
+<script>
+(function () {
+  var POSTER_ASPECT = 1330 / 1773;              // 海报宽高比
+  var POSTER_H = 1 / POSTER_ASPECT;             // MindAR 中图片宽度恒为 1，高度为倒数
+  var CHAR_HEAD_PCT = 0.35;                     // 角色头顶距海报顶部比例（按海报校准）
+  var CHAR_FEET_PCT = 0.845;                    // 角色脚底距海报顶部比例（按海报校准）
+  var START_Z = -0.55;                          // 起始：藏到海报背后
+  var END_Z = 0.30;                             // 结束：走出海报
+  var EMERGE_DUR = 2100;                        // 浮出时长 ms
+  var DANCE_START = 0.55;                       // 浮出进度到这里开始起舞
+
+  var intro = document.getElementById('intro');
+  var hint = document.getElementById('hint');
+  var errBox = document.getElementById('err');
+  var errTitle = document.getElementById('errTitle');
+  var errMsg = document.getElementById('errMsg');
+  var retryBtn = document.getElementById('retry');
+  var startBtn = document.getElementById('startBtn');
+  var scene = document.getElementById('arScene');
+  var targetEl = document.getElementById('targetEntity');
+  var pivot = document.getElementById('pivot');
+  var dancer = document.getElementById('dancer');
+
+  var THREE = AFRAME.THREE;
+  var model = null, mixer = null, action = null;
+  var modelScale = 1, baseY = 0;
+  var state = 'idle';        // idle | emerging | dancing
+  var emergeT0 = 0;
+  var danceStarted = false;
+  var hasTracked = false;
+  var arStarted = false;
+
+  function showError(title, msg) {
+    errTitle.textContent = title;
+    errMsg.innerHTML = msg;
+    errBox.classList.add('show');
+  }
+
+  function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
+  function lerp(a, b, t) { return a + (b - a) * t; }
+
+  // ---------- 模型加载：按海报比例自动定尺寸 ----------
+  // 蒙皮网格不能用 Box3.setFromObject（骨骼矩阵未就绪会得到空盒），改用几何体包围盒
+  function computeLocalBox(root) {
+    var box = new THREE.Box3();
+    var tmp = new THREE.Box3();
+    var m = new THREE.Matrix4();
+    root.traverse(function (o) {
+      var g = o.geometry;
+      if (!g || !g.isBufferGeometry) return;
+      if (!g.boundingBox) g.computeBoundingBox();
+      if (!g.boundingBox) return;
+      // 只用局部矩阵链（不依赖 matrixWorld，避免父级变换未就绪时污染）
+      m.identity();
+      var n = o;
+      var depth = 0;
+      while (n && n !== root && depth < 32) { m.premultiply(n.matrix); n = n.parent; depth++; }
+      tmp.copy(g.boundingBox);
+      tmp.applyMatrix4(m);
+      if (isFinite(tmp.min.y) && isFinite(tmp.max.y) && tmp.max.y > tmp.min.y) box.union(tmp);
+    });
+    return box;
+  }
+
+  dancer.addEventListener('model-loaded', function (e) {
+    model = e.detail.model;
+    var box = computeLocalBox(model);
+    var size = { x: box.max.x - box.min.x, y: box.max.y - box.min.y, z: box.max.z - box.min.z };
+    if (!isFinite(size.y) || size.y < 0.01) { size.y = 0.98; box.min.y = 0; }   // 兜底
+    if (!isFinite(box.min.y)) box.min.y = 0;
+
+    var charH = POSTER_H * (CHAR_FEET_PCT - CHAR_HEAD_PCT);   // 角色应占的 AR 高度
+    modelScale = charH / size.y;
+    dancer.setAttribute('scale', { x: modelScale, y: modelScale, z: modelScale });
+
+    // 让模型脚底对齐海报上角色的脚底位置，水平居中
+    var feetY = POSTER_H * (0.5 - CHAR_FEET_PCT);
+    baseY = feetY - box.min.y * modelScale;
+    pivot.setAttribute('position', { x: 0, y: baseY, z: START_Z });
+
+    // 动画
+    var clips = model.animations || [];
+    if (clips.length) {
+      mixer = new THREE.AnimationMixer(model);
+      action = mixer.clipAction(clips[0]);
+      action.setLoop(THREE.LoopRepeat, Infinity);
+      action.play();
+      mixer.timeScale = 0.34;      // 苏醒般慢速
+    }
+    window.__arnModel = { size: size, scale: modelScale, clips: clips.length };
+    console.log('[AR] model ready', size, 'scale', modelScale, 'clips', clips.length);
+  });
+
+  // ---------- 追踪事件 ----------
+  targetEl.addEventListener('targetFound', function () {
+    hasTracked = true;
+    hint.classList.add('hide');
+    retryBtn.classList.remove('hidden');
+    startSequence();
+  });
+
+  targetEl.addEventListener('targetLost', function () {
+    retryBtn.classList.add('hidden');
+    if (!arStarted) return;
+    hint.classList.remove('hide');
+    hint.innerHTML = '<b>海报已丢失</b> · 重新对准海报试试';
+    // 回到初始状态，下次识别重新走出
+    if (state !== 'idle') {
+      state = 'idle';
+      danceStarted = false;
+      pivot.setAttribute('position', { x: 0, y: baseY, z: START_Z });
+      dancer.setAttribute('rotation', { x: 0, y: 0, z: 0 });
+      if (mixer) { mixer.stopAllAction(); mixer.timeScale = 0.34; }
+    }
+  });
+
+  function startSequence() {
+    if (!model) return;
+    state = 'emerging';
+    emergeT0 = performance.now();
+    danceStarted = false;
+    pivot.setAttribute('position', { x: 0, y: baseY, z: START_Z });
+    dancer.setAttribute('rotation', { x: 0, y: 0, z: 0 });
+    if (mixer && action) {
+      mixer.stopAllAction();
+      action.reset().play();
+      mixer.timeScale = 0.34;
+    }
+  }
+
+  // ---------- 每帧驱动 ----------
+  var lastT = 0;
+  scene.addEventListener('renderstart', function () {
+    var renderLoop = function (t) {
+      requestAnimationFrame(renderLoop);
+      var dt = lastT ? Math.min((t - lastT) / 1000, 0.06) : 0.016;
+      lastT = t;
+
+      if (state === 'emerging' && model) {
+        var p = Math.min((t - emergeT0) / EMERGE_DUR, 1);
+        var e = easeOutCubic(p);
+        pivot.setAttribute('position', { x: 0, y: baseY, z: lerp(START_Z, END_Z, e) });
+
+        // 从纸面里"探身"出来：先微前倾再回正
+        var tilt = Math.sin(p * Math.PI) * 7.0;
+        dancer.setAttribute('rotation', { x: tilt, y: 0, z: 0 });
+
+        if (mixer) {
+          mixer.timeScale = lerp(0.34, 1.0, Math.min(1, p / 0.8));
+          if (p >= 1) {
+            state = 'dancing';
+            pivot.setAttribute('position', { x: 0, y: baseY, z: END_Z });
+            dancer.setAttribute('rotation', { x: 0, y: 0, z: 0 });
+            mixer.timeScale = 1.0;
+          }
+        }
+      }
+
+      if (mixer) mixer.update(dt);
+    };
+    requestAnimationFrame(renderLoop);
+  });
+
+  // ---------- 启动 ----------
+  // ---------- 摄像头故障诊断 ----------
+  var cameraReady = false;
+  var camTimer = null;
+
+  function uaInfo() {
+    var ua = navigator.userAgent || '';
+    var l = ua.toLowerCase();
+    return {
+      wx: l.indexOf('micromessenger') >= 0,
+      ios: /iphone|ipad|ipod/.test(l),
+      safari: /safari/.test(l) && !/crios|fxios|edgios|chrome/.test(l) || (/iphone|ipad|ipod/.test(l) && l.indexOf('safari') >= 0 && !/crios|fxios|edgios/.test(l)),
+      android: l.indexOf('android') >= 0
+    };
+  }
+
+  function errHint(err, env) {
+    var n = (err && err.name) || '';
+    var m = (err && err.message) || String(err || '未知错误');
+    if (n === 'NotAllowedError' || n === 'PermissionDeniedError') {
+      return '浏览器拒绝了摄像头权限。<br>请点地址栏/设置里允许摄像头，然后刷新页面重试。';
+    }
+    if (n === 'NotFoundError' || n === 'DevicesNotFoundError') {
+      return '没有找到可用摄像头。';
+    }
+    if (n === 'NotReadableError' || n === 'TrackStartError') {
+      return '摄像头被其他程序占用（如相机、视频通话），请关闭后重试。';
+    }
+    if (n === 'OverconstrainedError') {
+      return '当前摄像头不支持所需参数，请换一个浏览器试试。';
+    }
+    if (env.wx) {
+      return '微信内置浏览器限制了摄像头调用。<br>请点右上角 “…” → 在浏览器打开（iOS 用 Safari、安卓用 Chrome）。<br><br><span class="mono">' + m + '</span>';
+    }
+    return '请确认已允许摄像头权限，并通过 HTTPS 链接访问。<br><br><span class="mono">' + m + '</span>';
+  }
+
+  function checkEnv() {
+    var env = uaInfo();
+    if (!window.isSecureContext) {
+      showError('当前不是安全连接', '摄像头只能在 https 页面使用。<br>请确认地址以 https:// 开头（当前：' + location.protocol + '//' + location.host + '）。');
+      return null;
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      if (env.wx) {
+        showError('微信内无法启动摄像头', '请点右上角 “…” → 在浏览器打开（iOS 用 Safari、安卓用 Chrome）。');
+      } else if (env.ios && !env.safari) {
+        showError('此浏览器不支持摄像头', 'iPhone 请用 Safari 打开本页面。');
+      } else {
+        showError('当前浏览器不支持摄像头', '请使用 Safari（iOS）或 Chrome（安卓）打开本页面。');
+      }
+      return null;
+    }
+    return env;
+  }
+
+  startBtn.addEventListener('click', function () {
+    intro.classList.add('fade');
+    arStarted = true;
+    setTimeout(function () { intro.classList.add('hidden'); }, 500);
+    hint.classList.remove('hide');
+
+    var env = checkEnv();
+    if (!env) return;
+
+    // 先自己探一次摄像头，把真实失败原因显示出来（MindAR 内部失败是静默的）
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false })
+      .then(function (stream) {
+        stream.getTracks().forEach(function (t) { t.stop(); });
+        try {
+          var mindarSys = scene.systems['mindar-image-system'];
+          if (!mindarSys) throw new Error('MindAR 未就绪，请刷新页面重试');
+          mindarSys.start();
+          camTimer = setTimeout(function () {
+            if (!cameraReady) {
+              showError('摄像头画面未能启动', '权限已通过，但取流超时。请刷新页面重试；若仍失败，换 Chrome / Safari 打开。');
+            }
+          }, 9000);
+        } catch (err) {
+          showError('摄像头启动失败', errHint(err, env));
+        }
+      })
+      .catch(function (err) {
+        showError('摄像头无法启动', errHint(err, env));
+      });
+  });
+
+  retryBtn.addEventListener('click', function () {
+    hint.classList.remove('hide');
+    hint.innerHTML = '<b>对准海报</b> · 让整张画面进入取景框';
+  });
+
+  scene.addEventListener('arReady', function () {
+    cameraReady = true;
+    if (camTimer) { clearTimeout(camTimer); camTimer = null; }
+    errBox.classList.remove('show');
+    console.log('[AR] camera ready');
+  });
+
+  window.addEventListener('unhandledrejection', function (ev) {
+    console.warn('[AR] rejection', ev.reason);
+  });
+
+  // 用于自动化验证的探针
+  window.__arState = function () {
+    return {
+      state: state,
+      tracked: hasTracked,
+      modelReady: !!model,
+      clips: model ? (model.animations || []).length : 0,
+      mixer: !!mixer,
+      pivotZ: pivot ? pivot.getAttribute('position').z : null,
+      hasMind: true
+    };
+  };
+})();
+</script>
+</body>
+</html>
