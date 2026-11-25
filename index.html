@@ -60,6 +60,12 @@
     background: rgba(6,20,16,.66); border: 1px solid rgba(255,255,255,.16); backdrop-filter: blur(8px);
   }
   .hidden { display: none !important; }
+  #err .diag {
+    margin: 10px 0 0; padding: 8px 10px; font-size: 11px; line-height: 1.45;
+    color: rgba(205,238,225,.62); background: rgba(255,255,255,.05);
+    border-radius: 8px; white-space: pre-wrap; word-break: break-all;
+    font-family: ui-monospace, Menlo, Consolas, monospace; user-select: text;
+  }
 </style>
 <script src="assets/vendor/aframe.min.js"></script>
 <script src="assets/vendor/mindar-image-aframe.prod.js"></script>
@@ -83,6 +89,7 @@
   <div class="box">
     <h2 id="errTitle">摄像头无法启动</h2>
     <p id="errMsg">请确认已允许摄像头权限，并通过 HTTPS 链接访问</p>
+    <pre id="errDiag" class="diag"></pre>
   </div>
 </div>
 
@@ -121,6 +128,58 @@
 
 <script>
 (function () {
+  // ---------- 移动端兼容补丁（必须在 MindAR 启动前生效） ----------
+  // 1) 约束降级：部分安卓/微信内核不支持 facingMode:"environment" 精确约束，会直接抛错
+  (function patchGUM() {
+    var md = navigator.mediaDevices;
+    if (!md || !md.getUserMedia) return;
+    var orig = md.getUserMedia.bind(md);
+    md.getUserMedia = function (c) {
+      return orig(c).catch(function (e) {
+        var n = (e && e.name) || '';
+        if (n === 'OverconstrainedError' || n === 'NotFoundError' || n === 'TypeError') {
+          return orig({ video: true, audio: false }).catch(function () {
+            return orig({ video: { facingMode: 'user' }, audio: false });
+          });
+        }
+        throw e;
+      });
+    };
+  })();
+
+  // 2) iOS 必须的 video 属性：playsinline / muted / autoplay，否则黑屏
+  (function patchVideo() {
+    function fix(v) {
+      if (!v || v.__arFixed) return;
+      v.__arFixed = true;
+      try {
+        v.setAttribute('playsinline', '');
+        v.setAttribute('webkit-playsinline', '');
+        v.setAttribute('muted', '');
+        v.muted = true;
+        v.autoplay = true;
+        v.style.objectFit = 'cover';
+      } catch (e) {}
+    }
+    function scan(root) {
+      if (!root) return;
+      if (root.tagName === 'VIDEO') fix(root);
+      if (root.querySelectorAll) {
+        var vs = root.querySelectorAll('video');
+        for (var i = 0; i < vs.length; i++) fix(vs[i]);
+      }
+    }
+    scan(document);
+    try {
+      new MutationObserver(function (ms) {
+        for (var i = 0; i < ms.length; i++) {
+          var added = ms[i].addedNodes || [];
+          for (var j = 0; j < added.length; j++) scan(added[j]);
+        }
+      }).observe(document.documentElement, { childList: true, subtree: true });
+    } catch (e) {}
+  })();
+
   var POSTER_ASPECT = 1330 / 1773;              // 海报宽高比
   var POSTER_H = 1 / POSTER_ASPECT;             // MindAR 中图片宽度恒为 1，高度为倒数
   var CHAR_HEAD_PCT = 0.35;                     // 角色头顶距海报顶部比例（按海报校准）
@@ -151,9 +210,19 @@
   var hasTracked = false;
   var arStarted = false;
 
-  function showError(title, msg) {
+  function showError(title, msg, diag) {
     errTitle.textContent = title;
     errMsg.innerHTML = msg;
+    var d = document.getElementById('errDiag');
+    if (d) {
+      var env = uaInfo();
+      d.textContent = [
+        diag || '',
+        'secure=' + window.isSecureContext + ' proto=' + location.protocol,
+        'wx=' + env.wx + ' ios=' + env.ios + ' and=' + env.android,
+        'ua=' + (navigator.userAgent || '').slice(0, 120)
+      ].filter(Boolean).join('\n');
+    }
     errBox.classList.add('show');
   }
 
@@ -361,11 +430,11 @@
             }
           }, 9000);
         } catch (err) {
-          showError('摄像头启动失败', errHint(err, env));
+          showError('摄像头启动失败', errHint(err, env), 'err=' + ((err && err.name) || '?') + ': ' + ((err && err.message) || ''));
         }
       })
       .catch(function (err) {
-        showError('摄像头无法启动', errHint(err, env));
+        showError('摄像头无法启动', errHint(err, env), 'err=' + ((err && err.name) || '?') + ': ' + ((err && err.message) || ''));
       });
   });
 
