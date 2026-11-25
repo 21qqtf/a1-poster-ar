@@ -8,10 +8,25 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%90%A7%3C/text%3E%3C/svg%3E">
 <style>
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #08120f; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; color: #eaf6f1; }
+  /* 底色只给 html：body 必须保持透明。
+     MindAR 会把摄像头 <video> 以 z-index:-2 插入 body，
+     若 body 有不透明背景色，会整层盖住摄像头画面 —— 这正是「黑屏」的根因。 */
+  html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #08120f; }
+  body {
+    margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
+    background: transparent;
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; color: #eaf6f1;
+  }
 
-  a-scene { position: fixed; inset: 0; }
+  /* 摄像头画面层：强制放在 3D 层之下、页面底色之上（不依赖负 z-index 的浏览器差异） */
+  body > video {
+    position: absolute !important; inset: 0 !important; left: 0 !important; top: 0 !important;
+    width: 100% !important; height: 100% !important;
+    object-fit: cover !important; z-index: 0 !important;
+  }
+
+  /* 3D 层：必须压在摄像头画面之上，否则模型被视频遮住 */
+  a-scene { position: fixed; inset: 0; z-index: 1; }
 
   #intro {
     position: fixed; inset: 0; z-index: 50;
@@ -66,6 +81,93 @@
     border-radius: 8px; white-space: pre-wrap; word-break: break-all;
     font-family: ui-monospace, Menlo, Consolas, monospace; user-select: text;
   }
+
+  /* ---------- 加载进度层 ---------- */
+  #boot {
+    position: fixed; inset: 0; z-index: 56; display: none;
+    align-items: center; justify-content: center; padding: 28px;
+    background: radial-gradient(120% 90% at 50% 0%, #17463a 0%, #0a1a15 55%, #050b09 100%);
+    opacity: 0; transition: opacity .45s ease;
+  }
+  #boot.show { display: flex; }
+  #boot.in { opacity: 1; }
+  #boot.done { opacity: 0; pointer-events: none; }
+  .boot-box { width: 100%; max-width: 320px; text-align: center; }
+  .boot-ring {
+    width: 62px; height: 62px; margin: 0 auto 20px; border-radius: 50%;
+    border: 2px solid rgba(46,230,168,.16); border-top-color: #2ee6a8;
+    animation: spin 1s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .boot-title { font-size: 15px; letter-spacing: 1px; color: #d8f5ea; margin-bottom: 16px; }
+  .boot-bar {
+    height: 4px; border-radius: 999px; background: rgba(255,255,255,.08); overflow: hidden;
+  }
+  .boot-bar i {
+    display: block; height: 100%; width: 0%;
+    background: linear-gradient(90deg, #22c893, #6cf5c4);
+    transition: width .25s ease;
+  }
+  .boot-meta {
+    display: flex; justify-content: space-between; margin-top: 10px;
+    font-size: 11px; color: #6d8479; letter-spacing: .5px;
+  }
+
+  /* DOM 悬浮卡已停用：说明牌改为贴在识别图锚点上的 3D 面片（见 setupInfoBoard），
+     属于场景的一部分而不是屏幕 HUD。下面这套样式与 DOM 结构仅保留为文案数据源。 */
+  #infoCard {
+    display: none !important;
+    position: fixed; left: 0; top: 0; z-index: 26;
+    width: 198px; padding: 11px 13px 12px 15px;
+    border-radius: 13px;
+    background: rgba(6,20,16,.60);
+    border: 1px solid rgba(46,230,168,.24);
+    box-shadow: 0 10px 26px rgba(0,0,0,.30);
+    backdrop-filter: blur(10px) saturate(120%);
+    -webkit-backdrop-filter: blur(10px) saturate(120%);
+    opacity: 0; visibility: hidden;
+    transition: opacity .45s ease, visibility .45s ease;
+    will-change: transform; pointer-events: none; overflow: hidden;
+  }
+  #infoCard.show { opacity: 1; visibility: visible; }
+  #infoCard::before {
+    content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 2px;
+    background: linear-gradient(180deg, #6cf5c4, #22c893 62%, rgba(34,200,147,0));
+  }
+  .ic-tag { font-size: 9.5px; letter-spacing: 1.4px; color: #6fd6b4; margin-bottom: 5px; }
+  .ic-title { font-size: 17px; font-weight: 700; letter-spacing: 1px; color: #eaf6f1; line-height: 1.25; }
+  .ic-sub { font-size: 11px; line-height: 1.55; color: #9ec0b3; margin-top: 5px; }
+  .ic-meta { display: flex; align-items: center; justify-content: space-between; margin-top: 9px; }
+  .ic-meta em { font-style: normal; font-size: 9px; letter-spacing: 1.5px; color: #2ee6a8; opacity: .9; }
+  .ic-dots { display: flex; gap: 4px; }
+  .ic-dots i { width: 5px; height: 5px; border-radius: 50%; background: rgba(46,230,168,.26); transition: background .3s; }
+  .ic-dots i.on { background: #2ee6a8; box-shadow: 0 0 6px rgba(46,230,168,.85); }
+
+  /* ---------- 点击提示 ---------- */
+  #tapTip {
+    position: fixed; left: 50%; bottom: calc(80px + env(safe-area-inset-bottom));
+    transform: translateX(-50%); z-index: 28;
+    padding: 9px 17px; border-radius: 999px; font-size: 13px; white-space: nowrap;
+    background: rgba(6,20,16,.74); border: 1px solid rgba(46,230,168,.34);
+    color: #d8f5ea; backdrop-filter: blur(8px);
+    opacity: 0; pointer-events: none; transition: opacity .4s ease;
+  }
+  #tapTip.show { opacity: 1; animation: tapPulse 1.9s ease-in-out infinite; }
+  @keyframes tapPulse {
+    0%, 100% { transform: translateX(-50%) scale(1); }
+    50% { transform: translateX(-50%) scale(1.045); }
+  }
+
+  /* ---------- 静音开关 ---------- */
+  #muteBtn {
+    position: fixed; right: 16px; bottom: calc(96px + env(safe-area-inset-bottom)); z-index: 30;
+    width: 42px; height: 42px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(6,20,16,.66); border: 1px solid rgba(255,255,255,.16);
+    backdrop-filter: blur(8px); color: #cdeee1;
+  }
+  #muteBtn svg { width: 19px; height: 19px; display: block; }
+  #muteBtn.off { color: #6d8479; }
 </style>
 <script src="assets/vendor/aframe.min.js"></script>
 <script src="assets/vendor/mindar-image-aframe.prod.js"></script>
@@ -82,8 +184,37 @@
   </div>
 </div>
 
+<div id="boot">
+  <div class="boot-box">
+    <div class="boot-ring"></div>
+    <div class="boot-title">正在唤醒生命伙伴</div>
+    <div class="boot-bar"><i id="bootFill"></i></div>
+    <div class="boot-meta"><span id="bootPct">0%</span><span id="bootNote">加载素材</span></div>
+  </div>
+</div>
+
 <div id="hint"><b>对准海报</b> · 让整张画面进入取景框</div>
 <div id="retry" class="hidden">重新扫描</div>
+
+<div id="infoCard">
+  <div class="ic-tag" id="icTag">生物学院 · 生命律动</div>
+  <div class="ic-title" id="icTitle">生命律动</div>
+  <div class="ic-sub" id="icSub">心跳，是生命最古老的节拍器</div>
+  <div class="ic-meta">
+    <em id="icMeta">HIP HOP</em>
+    <span class="ic-dots" id="icDots"><i class="on"></i><i></i></span>
+  </div>
+</div>
+
+<div id="tapTip">点一下小鸟 · 换一支舞</div>
+
+<div id="muteBtn">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M11 5 6 9H3v6h3l5 4V5z"></path>
+    <path id="waveA" d="M15.5 8.5a5 5 0 0 1 0 7"></path>
+    <path id="waveB" d="M18.5 5.5a9 9 0 0 1 0 13"></path>
+  </svg>
+</div>
 
 <div id="err">
   <div class="box">
@@ -95,15 +226,14 @@
 
 <a-scene
   id="arScene"
-  mindar-image="imageTargetSrc: assets/target.mind; autoStart: false; uiLoading: no; uiError: no; uiScanning: no; filterMinCF: 0.0001; filterBeta: 0.001; missTolerance: 6; warmupTolerance: 4"
+  mindar-image="imageTargetSrc: assets/target.mind; autoStart: false; uiLoading: no; uiError: no; uiScanning: no; filterMinCF: 0.001; filterBeta: 1000; missTolerance: 3; warmupTolerance: 5"
   color-space="sRGB"
-  renderer="antialias: true, colorManagement: true, logarithmicDepthBuffer: false, physicallyCorrectLights: false"
+  renderer="antialias: true, alpha: true, colorManagement: true, logarithmicDepthBuffer: false, physicallyCorrectLights: false"
   vr-mode-ui="enabled: false"
   device-orientation-permission-ui="enabled: false"
   loading-screen="enabled: false">
 
-  <a-assets timeout="15000">
-    <a-asset-item id="dancerGLB" src="assets/model_opt.glb"></a-asset-item>
+  <a-assets timeout="20000">
     <img id="posterTex" src="assets/poster.jpg" crossorigin="anonymous">
   </a-assets>
 
@@ -115,19 +245,23 @@
   <a-camera position="0 0 0" look-controls="enabled: false" wasd-controls="enabled: false" cursor="fuse: false"></a-camera>
 
   <a-entity id="targetEntity" mindar-image-target="targetIndex: 0">
-    <!-- 海报遮挡平面：与识别图同尺寸，角色从其后浮出 -->
-    <a-plane id="occluder" width="1" height="1.3331" position="0 0 0.0015"
-             material="src: #posterTex; shader: flat; side: double; transparent: false; opacity: 1"></a-plane>
+    <!-- 遮挡平面挂点：与识别图同尺寸，角色从其后浮出。
+         注意：这里不贴任何 poster 贴图 —— 遮挡面只写深度、不写颜色（colorWrite:false），
+         自身不显示任何像素，因此无论真实海报是打印/屏幕/什么图，都不会出现"第二张 AR 海报"。
+         实体本体在 JS 里 setupOccluder() 用 ShaderMaterial 挂载，便于逐帧控制消散遮罩。 -->
+    <a-entity id="occluder" position="0 0 0.0015"></a-entity>
 
-    <!-- 角色挂点：沿 +Z 浮出 -->
+    <!-- 角色挂点：沿 +Z 浮出；模型由 JS 预取完成后注入（带真实进度） -->
     <a-entity id="pivot" position="0 0 -0.55">
-      <a-gltf-model id="dancer" src="#dancerGLB" scale="1 1 1" rotation="0 0 0"></a-gltf-model>
+      <a-gltf-model id="dancer" scale="1 1 1" rotation="0 0 0"></a-gltf-model>
     </a-entity>
   </a-entity>
 </a-scene>
 
 <script>
 (function () {
+  var THREE = AFRAME.THREE;   // 提前取好，遮挡/拾取/投影都依赖它
+
   // ---------- 移动端兼容补丁（必须在 MindAR 启动前生效） ----------
   // 1) 约束降级：部分安卓/微信内核不支持 facingMode:"environment" 精确约束，会直接抛错
   (function patchGUM() {
@@ -185,9 +319,14 @@
   var CHAR_HEAD_PCT = 0.35;                     // 角色头顶距海报顶部比例（按海报校准）
   var CHAR_FEET_PCT = 0.845;                    // 角色脚底距海报顶部比例（按海报校准）
   var START_Z = -0.55;                          // 起始：藏到海报背后
-  var END_Z = 0.30;                             // 结束：走出海报
+  var END_Z = 0.06;                             // 结束：走出海报（贴住纸面，避免悬空产生"贴屏"错觉）
   var EMERGE_DUR = 2100;                        // 浮出时长 ms
   var DANCE_START = 0.55;                       // 浮出进度到这里开始起舞
+
+  // 遮挡退场方式：默认（无参数）出场结束后遮挡立即彻底退场；
+  // ?dissolve=1 时改为 0.4s 由中间向外的遮罩消散（遮挡面本身不写颜色，无贴图残影）
+  var DISSOLVE = /[?&]dissolve=1(&|$)/.test(location.search || '');
+  var DISSOLVE_DUR = 400;                       // 消散时长 ms
 
   var intro = document.getElementById('intro');
   var hint = document.getElementById('hint');
@@ -200,15 +339,141 @@
   var targetEl = document.getElementById('targetEntity');
   var pivot = document.getElementById('pivot');
   var dancer = document.getElementById('dancer');
+  var occluderEl = document.getElementById('occluder');
 
-  var THREE = AFRAME.THREE;
+  // ---------- 遮挡平面（只写深度、不写颜色） ----------
+  // 目标：角色藏在海报背后时被"这张真实海报"挡住，但 AR 自身不能画出一张贴图海报。
+  // 做法：材质 colorWrite:false（不产生任何像素）+ depthWrite:true（写深度挡住角色）
+  //      + transparent:false（留在不透明渲染队列）+ side:DoubleSide（正反面都挡）
+  //      + renderOrder = -1（小于角色的 0，保证深度先写）
+  var OCC_RENDER_ORDER = -1;
+  var occMesh = null, occMat = null;
+  var occState = 'on';        // on | dissolving | off
+  var occT0 = 0;
+
+  function setupOccluder() {
+    if (occMesh || !occluderEl || !THREE) return;
+    var geo = new THREE.PlaneGeometry(1, POSTER_H);
+    occMat = new THREE.ShaderMaterial({
+      uniforms: { uProg: { value: 0 } },
+      vertexShader: [
+        'varying vec2 vUv;',
+        'void main() {',
+        '  vUv = uv;',
+        '  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);',
+        '}'
+      ].join('\n'),
+      fragmentShader: [
+        'uniform float uProg;',
+        'varying vec2 vUv;',
+        'void main() {',
+        // 以海报中心为原点归一化半径：中心 0，长边中点 1，四角约 1.25
+        '  vec2 d = (vUv - 0.5) * vec2(1.0, 0.75);',
+        '  float r = length(d) * 2.0;',
+        // 消散时从中心开始 discard（中间先透、向外扩散），1.4 保证四角也能完全退掉
+        '  if (uProg > 0.0001 && r < uProg * 1.4) discard;',
+        '  gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);',
+        '}'
+      ].join('\n'),
+      depthTest: true,
+      depthWrite: true,
+      colorWrite: false,          // 关键：不输出任何颜色像素
+      transparent: false,         // 关键：留在不透明队列
+      blending: THREE.NoBlending,
+      side: THREE.DoubleSide      // 关键：正反面都挡
+    });
+    occMesh = new THREE.Mesh(geo, occMat);
+    occMesh.renderOrder = OCC_RENDER_ORDER;   // 小于角色（默认 0）
+    occMesh.frustumCulled = false;
+    occluderEl.setObject3D('mesh', occMesh);
+    occluderEl.setAttribute('visible', true);
+    occState = 'on';
+  }
+
+  // 恢复遮挡（新一轮浮出开始 / 海报重新识别时使用）
+  function resetOccluder() {
+    setupOccluder();
+    occState = 'on';
+    if (occMat) occMat.uniforms.uProg.value = 0;
+    if (occluderEl) occluderEl.setAttribute('visible', true);
+  }
+
+  // 退场：默认直接彻底退场；?dissolve=1 时开始 0.4s 由中间向外的消散
+  function retireOccluder(now) {
+    if (occState === 'off' || occState === 'dissolving') return;   // 幂等：只在“仍遮挡”时退场一次
+    if (!occMat) {
+      occState = 'off';
+      if (occluderEl) occluderEl.setAttribute('visible', false);
+      return;
+    }
+    if (DISSOLVE) {
+      occState = 'dissolving';
+      occT0 = now;
+      occMat.uniforms.uProg.value = 0.0002;   // 立刻起效，避免首帧仍全遮挡
+    } else {
+      occState = 'off';
+      occMat.uniforms.uProg.value = 0;
+      if (occluderEl) occluderEl.setAttribute('visible', false);
+    }
+  }
+
+  // 每帧推进消散；完成后彻底移除遮挡（不再留任何平面）
+  function updateOccluder(now) {
+    if (occState !== 'dissolving' || !occMat) return;
+    var p = Math.min((now - occT0) / DISSOLVE_DUR, 1);
+    occMat.uniforms.uProg.value = p;
+    if (p >= 1) {
+      occState = 'off';
+      occMat.uniforms.uProg.value = 0;
+      if (occluderEl) occluderEl.setAttribute('visible', false);
+    }
+  }
+
   var model = null, mixer = null, action = null;
-  var modelScale = 1, baseY = 0;
+  var modelScale = 1, baseY = 0, charWorldH = 0.42;
   var state = 'idle';        // idle | emerging | dancing
   var emergeT0 = 0;
   var danceStarted = false;
   var hasTracked = false;
+  // 只出场一次：一旦从小鸟从海报里走出来并落到世界位置，就永久钉在那儿，
+  // 丢跟踪只是"暂时看不见"，绝不复位、不再重播走出动画
+  var hasEmerged = false;
   var arStarted = false;
+
+  // ==================== 舞蹈数据 ====================
+  var DANCES = [
+    {
+      id: 'hiphop',
+      clip: 'A1_HipHop_A30',
+      tag: '生物学院 · 生命律动',
+      title: '生命律动',
+      sub: '心跳，是生命最古老的节拍器',
+      meta: 'HIP HOP',
+      voice: 'assets/voice_hiphop.mp3'
+    },
+    {
+      id: 'chicken',
+      clip: 'A1_Chicken_Dance',
+      tag: '生物学院 · 本能之舞',
+      title: '本能之舞',
+      sub: '本能，是写进基因里的快乐程序',
+      meta: 'CHICKEN DANCE',
+      voice: 'assets/voice_chicken.mp3'
+    }
+  ];
+  var curDance = 0;
+  var actionsByName = {};
+  var hasSwitched = false;
+  var introSpoken = false;   // 开场介绍只说一次（整次访问）
+
+  var icTag = document.getElementById('icTag');
+  var icTitle = document.getElementById('icTitle');
+  var icSub = document.getElementById('icSub');
+  var icMeta = document.getElementById('icMeta');
+  var icDots = document.getElementById('icDots');
+  var infoCard = document.getElementById('infoCard');
+  var tapTip = document.getElementById('tapTip');
+  var muteBtn = document.getElementById('muteBtn');
 
   function showError(title, msg, diag) {
     errTitle.textContent = title;
@@ -228,6 +493,534 @@
 
   function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
   function lerp(a, b, t) { return a + (b - a) * t; }
+
+  // ==================== 说明牌（3D 场景物件） ====================
+  // 说明牌不再投影到屏幕上跟随角色，而是用 canvas 纹理做成面片，挂在识别图锚点里。
+  // 它和海报、模型共用同一套世界坐标：镜头怎么移动、角度怎么变，牌都跟着海报一起
+  // 做透视变化 —— 它是"立在场景里的一块牌子"，绝不会黏在屏幕上。
+  var _wp = null;                                   // 复用的临时向量（点击拾取等处使用）
+  var boardEl = null, boardMesh = null, boardMat = null, boardCanvas = null, boardTex = null;
+  var boardGroup = null, boardStick = null, boardMats = null;
+  var boardVisible = false, boardAlpha = 0;
+  var boardPlate = null, boardCharHalfW = 0, boardFeetY = -0.34;
+  // —— 说明牌：一块有厚度的实体亚克力铭牌，立在鸟人右侧、贴着纸面微微前倾 ——
+  // 它不是贴在纸上的印刷字，也不是屏幕浮窗：有 2cm 板厚、有侧壁、有支撑杆，
+  // 镜头绕着走的时候能看到它的侧面，和海报/小鸟共用同一套世界坐标。
+  var BOARD_W = 0.24;                               // 世界单位（MindAR 中海报宽度恒为 1）
+  var BOARD_H = BOARD_W * 340 / 1024;               // 保持 1024:340 板面比例
+  var BOARD_T = 0.020;                              // 板厚 2cm，侧看能立起来
+  var BOARD_POS = { x: 0.35, y: -0.27, z: 0.014 };  // 鸟人右侧、与其同一"舞台层"，板背几乎贴住纸面
+  var BOARD_ROT = { x: -0.055, y: -0.22 };
+  var BOARD_CZ = 0.16;   // 说明牌往前站 16cm：站在人侧前方，不切进翅膀          // 顶边微外倾 + 略朝鸟人转，让侧壁露出来
+
+  function drawBoard() {
+    if (!boardCanvas) return;
+    var c = boardCanvas, g = c.getContext('2d');
+    var W = c.width, H = c.height;
+    var d = DANCES[curDance] || DANCES[0];
+    var FONT = '"PingFang SC","Microsoft YaHei","Noto Sans SC",sans-serif';
+    g.clearRect(0, 0, W, H);
+    g.globalAlpha = 1;
+
+    var pad = 16, x0 = pad, y0 = pad, x1 = W - pad, y1 = H - pad;
+    var r = 22;
+
+    // 这是"实体亚克力铭牌"的板面贴图，不是压在纸上的印刷字。
+    // 板底、高光、倒角描边一个都不能少，配上 2cm 板厚和侧壁才像块真牌子。
+    var PLATE = '#0F291C';                        // 板底：深墨绿亚克力
+    var INK = '#F3FFF9';                          // 主文字：近白
+    var INK_SOFT = 'rgba(219,243,231,0.82)';
+    var ACC = '#57E39D';                          // 强调：荧光薄荷
+    var HAIR = 'rgba(126,255,190,0.22)';
+
+    function platePath() {
+      g.beginPath();
+      g.moveTo(x0 + r, y0);
+      g.lineTo(x1 - r, y0);
+      g.quadraticCurveTo(x1, y0, x1, y0 + r);
+      g.lineTo(x1, y1 - r);
+      g.quadraticCurveTo(x1, y1, x1 - r, y1);
+      g.lineTo(x0 + r, y1);
+      g.quadraticCurveTo(x0, y1, x0, y1 - r);
+      g.lineTo(x0, y0 + r);
+      g.quadraticCurveTo(x0, y0, x0 + r, y0);
+      g.closePath();
+    }
+
+    // 1) 板底渐变：上亮下沉，读作一块有厚度的亚克力
+    var bgGrad = g.createLinearGradient(0, y0, 0, y1);
+    bgGrad.addColorStop(0, '#1A412D');
+    bgGrad.addColorStop(0.45, PLATE);
+    bgGrad.addColorStop(1, '#081A10');
+    platePath();
+    g.fillStyle = bgGrad;
+    g.fill();
+
+    // 2) 顶部一道高光扫过：板面反光
+    g.save();
+    platePath();
+    g.clip();
+    var hi = g.createLinearGradient(0, y0, 0, y0 + 100);
+    hi.addColorStop(0, 'rgba(255,255,255,0.15)');
+    hi.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = hi;
+    g.fillRect(x0, y0, x1 - x0, 100);
+    g.restore();
+
+    // 3) 倒角亮边
+    platePath();
+    g.strokeStyle = HAIR;
+    g.lineWidth = 2;
+    g.stroke();
+
+    // 4) 左侧色条：实物铭牌的装饰条
+    g.fillStyle = ACC;
+    g.fillRect(x0 + 16, y0 + 34, 6, (y1 - y0) - 68);
+
+    // 5) 文案
+    var tx = x0 + 46;
+    g.textBaseline = 'top';
+    g.textAlign = 'left';
+
+    g.fillStyle = ACC;
+    g.font = '700 30px ' + FONT;
+    g.fillText(d.tag, tx, y0 + 30);
+
+    g.fillStyle = INK;
+    g.font = '700 74px ' + FONT;
+    g.fillText(d.title, tx, y0 + 68);
+
+    g.fillStyle = INK_SOFT;
+    g.font = '400 34px ' + FONT;
+    g.fillText(d.sub, tx, y0 + 158);
+
+    g.fillStyle = ACC;
+    g.font = '700 26px ' + FONT;
+    g.fillText(d.meta, tx, y0 + 208);
+
+    // 6) 底部分隔 + 页码点（实心=当前）
+    g.beginPath();
+    g.moveTo(x0 + 46, y1 - 34);
+    g.lineTo(x1 - 118, y1 - 34);
+    g.strokeStyle = HAIR;
+    g.lineWidth = 2;
+    g.stroke();
+
+    for (var i = 0; i < DANCES.length; i++) {
+      g.beginPath();
+      g.arc(x1 - 40 - (DANCES.length - 1 - i) * 30, y1 - 34, 8, 0, Math.PI * 2);
+      if (i === curDance) {
+        g.fillStyle = ACC;
+        g.fill();
+      } else {
+        g.strokeStyle = 'rgba(126,255,190,0.45)';
+        g.lineWidth = 2.5;
+        g.stroke();
+      }
+    }
+
+    if (boardTex) boardTex.needsUpdate = true;
+  }
+
+  function setupInfoBoard() {
+    if (boardMesh || !THREE || !targetEl) return;
+    boardCanvas = document.createElement('canvas');
+    boardCanvas.width = 1024;
+    boardCanvas.height = 340;
+    drawBoard();
+
+    boardTex = new THREE.CanvasTexture(boardCanvas);
+    if (THREE.SRGBColorSpace && 'colorSpace' in boardTex) boardTex.colorSpace = THREE.SRGBColorSpace;
+    else if (THREE.sRGBEncoding !== undefined) boardTex.encoding = THREE.sRGBEncoding;
+    if (boardTex.anisotropy !== undefined) boardTex.anisotropy = 4;
+
+    // 板面（正面/背面）用贴图，四个侧壁用实色 —— 侧壁就是"厚度"的来源
+    var faceMat = new THREE.MeshBasicMaterial({
+      map: boardTex, transparent: true, opacity: 0, depthWrite: false
+    });
+    var edgeMat = new THREE.MeshBasicMaterial({
+      color: 0x143223, transparent: true, opacity: 0, depthWrite: false
+    });
+    var topMat = new THREE.MeshBasicMaterial({
+      color: 0x2C6647, transparent: true, opacity: 0, depthWrite: false
+    });
+    boardMats = [faceMat, edgeMat, topMat];
+    boardMat = faceMat;   // 兼容旧的单材质引用
+
+    // BoxGeometry 的材质顺序：[+x, -x, +y, -y, +z, -z]
+    // 上沿(-y/+y)用更亮的色，配合前倾让顶面反一点光，立体感更强
+    var plateGeo = new THREE.BoxGeometry(BOARD_W, BOARD_H, BOARD_T);
+    var plate = new THREE.Mesh(plateGeo, [edgeMat, edgeMat, topMat, edgeMat, faceMat, faceMat]);
+    plate.position.set(BOARD_POS.x, BOARD_POS.y, BOARD_POS.z);
+    plate.rotation.set(BOARD_ROT.x, BOARD_ROT.y, 0);
+    plate.renderOrder = 2;
+    boardPlate = plate;
+
+    // 支撑杆：从牌底往下插到海报纸面，说明这块牌是"立"在展板上的
+    var stickH = 0.105;
+    var stickGeo = new THREE.BoxGeometry(0.014, stickH, 0.014);
+    boardStick = new THREE.Mesh(stickGeo, [edgeMat, edgeMat, edgeMat, edgeMat, edgeMat, edgeMat]);
+    boardStick.position.set(
+      BOARD_POS.x + Math.sin(BOARD_ROT.y) * 0.012,
+      BOARD_POS.y - BOARD_H / 2 - stickH / 2 + 0.006,
+      0.009
+    );
+    boardStick.rotation.set(0.02, BOARD_ROT.y, 0);
+    boardStick.renderOrder = 2;
+
+    boardGroup = new THREE.Group();
+    boardGroup.add(plate);
+    boardGroup.add(boardStick);
+
+    // 挂在识别图锚点上（不是相机、不是屏幕），跟随海报的世界坐标
+    boardEl = document.createElement('a-entity');
+    boardEl.setAttribute('visible', false);
+    targetEl.appendChild(boardEl);
+    boardEl.setObject3D('mesh', boardGroup);
+    layoutBoard();
+    console.log('[AR] info board mounted in world space (3D, thickness ' + BOARD_T + ')');
+  }
+
+  // 说明牌的"舞台站位"：按鸟人实际身高/半宽/脚底高度算，
+  // 保证牌子立在人身侧、杆子落在地面（脚底平面）而不是悬空。
+  function layoutBoard() {
+    if (!boardPlate || !boardStick) return;
+    var charH = charWorldH > 0.05 ? charWorldH : 0.42;
+    var halfW = boardCharHalfW > 0.01 ? boardCharHalfW : 0.11;
+
+    // 实测模型轮廓：身高 25%~58% 这一段是翼/裙摆，横向撑到 ±0.40（几乎占满海报）；
+    // 颈部以上的躯干只有 ±0.13，两侧才有真正的空档 —— 所以牌立在颈胸高度的人身侧，
+    // 并整体前移 16cm，让牌子站在他身前而不是切进翅膀。
+    var cy = boardFeetY + charH * 0.66;            // 牌心约在颈/上胸高度
+    var cx = halfW * 0.82;
+    var maxCx = 0.46 - BOARD_W / 2;                // 不许冲出海报右边缘
+    var minCx = 0.24 + BOARD_W / 2;                // 也不许压到腿部
+    if (cx > maxCx) cx = maxCx;
+    if (cx < minCx) cx = minCx;
+
+    boardPlate.position.set(cx, cy, BOARD_CZ);
+    boardPlate.rotation.set(BOARD_ROT.x, BOARD_ROT.y, 0);
+
+    // 支撑杆：从牌底一路插到脚底平面
+    var topY = cy - BOARD_H / 2 + 0.004;
+    var botY = boardFeetY - 0.004;
+    var len = Math.max(0.02, topY - botY);
+    boardStick.scale.set(1, len / 0.105, 1);
+    boardStick.position.set(
+      cx + Math.sin(BOARD_ROT.y) * 0.012,
+      (topY + botY) / 2,
+      BOARD_CZ - 0.006
+    );
+    boardStick.rotation.set(0.02, BOARD_ROT.y, 0);
+  }
+
+  function updateCardText() {
+    var d = DANCES[curDance];
+    icTag.textContent = d.tag;
+    icTitle.textContent = d.title;
+    icSub.textContent = d.sub;
+    icMeta.textContent = d.meta;
+    var html = '';
+    for (var i = 0; i < DANCES.length; i++) html += '<i class="' + (i === curDance ? 'on' : '') + '"></i>';
+    icDots.innerHTML = html;
+    drawBoard();
+  }
+
+  function showCard() {
+    if (boardVisible) return;
+    boardVisible = true;
+    updateCardText();
+    boardAlpha = 0;
+    if (boardEl) boardEl.setAttribute('visible', true);
+  }
+
+  function hideCard() {
+    boardVisible = false;
+  }
+
+  // 板面透明度：正面/背面贴图、侧壁、顶面统一控制
+  function setBoardOpacity(a) {
+    if (!boardMats) return;
+    for (var i = 0; i < boardMats.length; i++) boardMats[i].opacity = a;
+  }
+
+  // 牌面淡入淡出（牌本身位置固定，不需要每帧算屏幕坐标）
+  function updateBoardFade(dt) {
+    if (!boardMats) return;
+    var target = boardVisible ? 1 : 0;
+    var k = Math.min(1, (dt || 0.016) * 6);
+    boardAlpha += (target - boardAlpha) * k;
+    setBoardOpacity(boardAlpha);
+    if (boardEl) {
+      var vis = boardAlpha > 0.01;
+      if (boardEl.getAttribute('visible') !== vis) boardEl.setAttribute('visible', vis);
+    }
+  }
+
+
+  // ==================== 音频系统 ====================
+  // 全部用 Web Audio 程序化合成：环境底噪（风）+ 随机鸟鸣 + 出场铃音 + 切舞音效，
+  // 旁白用已 TTS 好的 mp3（走同一个 AudioContext，不受 iOS 自动播放限制）。
+  var AudioSys = (function () {
+    var ctx = null, master = null, ambBus = null, sfxBus = null;
+    var muted = false, started = false, birdTimer = null, ambNodes = null;
+    var cache = {};
+
+    function ensure() {
+      if (ctx) {
+        if (ctx.state === 'suspended') { try { ctx.resume(); } catch (e) {} }
+        return ctx;
+      }
+      var C = window.AudioContext || window.webkitAudioContext;
+      if (!C) return null;
+      try { ctx = new C(); } catch (e) { return null; }
+      master = ctx.createGain(); master.gain.value = 1; master.connect(ctx.destination);
+      ambBus = ctx.createGain(); ambBus.gain.value = 0.0001; ambBus.connect(master);
+      sfxBus = ctx.createGain(); sfxBus.gain.value = 0.95; sfxBus.connect(master);
+      return ctx;
+    }
+
+    function noiseBuf(sec) {
+      var n = Math.floor(ctx.sampleRate * sec);
+      var b = ctx.createBuffer(1, n, ctx.sampleRate);
+      var d = b.getChannelData(0);
+      for (var i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+      return b;
+    }
+
+    function birdCall() {
+      if (!ctx || muted) return;
+      var t = ctx.currentTime + 0.02;
+      var notes = 1 + Math.floor(Math.random() * 3);
+      for (var i = 0; i < notes; i++) {
+        var st = t + i * (0.085 + Math.random() * 0.07);
+        var o = ctx.createOscillator();
+        o.type = 'sine';
+        var f0 = 1950 + Math.random() * 1500;
+        var f1 = Math.max(620, f0 * (0.6 + Math.random() * 0.85));
+        o.frequency.setValueAtTime(f0, st);
+        o.frequency.exponentialRampToValueAtTime(f1, st + 0.072);
+        var g = ctx.createGain();
+        g.gain.setValueAtTime(0.0001, st);
+        g.gain.exponentialRampToValueAtTime(0.085, st + 0.011);
+        g.gain.exponentialRampToValueAtTime(0.0001, st + 0.088);
+        o.connect(g); g.connect(ambBus);
+        o.start(st); o.stop(st + 0.12);
+      }
+    }
+
+    function scheduleBird() {
+      if (!started) return;
+      birdTimer = setTimeout(function () {
+        birdCall();
+        scheduleBird();
+      }, 1700 + Math.random() * 3800);
+    }
+
+    function startAmbient() {
+      if (!ensure() || started) return;
+      started = true;
+
+      // 层一：风 —— 带通白噪 + 极慢 LFO 起伏
+      var src = ctx.createBufferSource();
+      src.buffer = noiseBuf(4); src.loop = true;
+      var bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 540; bp.Q.value = 0.85;
+      var lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1500;
+      var g = ctx.createGain(); g.gain.value = 0.072;
+      var lfo = ctx.createOscillator(); lfo.type = 'sine'; lfo.frequency.value = 0.07;
+      var lfoG = ctx.createGain(); lfoG.gain.value = 0.030;
+      lfo.connect(lfoG); lfoG.connect(g.gain);
+      src.connect(bp); bp.connect(lp); lp.connect(g); g.connect(ambBus);
+      src.start(); lfo.start();
+
+      // 层二：低频底垫，给一点"场地感"
+      var pad = ctx.createOscillator(); pad.type = 'sine'; pad.frequency.value = 87.3;
+      var padG = ctx.createGain(); padG.gain.value = 0.018;
+      pad.connect(padG); padG.connect(ambBus); pad.start();
+
+      ambNodes = { src: src, lfo: lfo, pad: pad };
+
+      var now = ctx.currentTime;
+      ambBus.gain.cancelScheduledValues(now);
+      ambBus.gain.setValueAtTime(0.0001, now);
+      ambBus.gain.linearRampToValueAtTime(1, now + 3.2);   // 3.2s 淡入，避免突入
+
+      scheduleBird();
+    }
+
+    function chime() {
+      if (!ensure()) return;
+      var t = ctx.currentTime + 0.02;
+      var notes = [523.25, 659.25, 783.99, 1046.5];
+      for (var i = 0; i < notes.length; i++) {
+        var f = notes[i], st = t + i * 0.085;
+        var o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f;
+        var o2 = ctx.createOscillator(); o2.type = 'sine'; o2.frequency.value = f * 2.01;
+        var g = ctx.createGain();
+        g.gain.setValueAtTime(0.0001, st);
+        g.gain.exponentialRampToValueAtTime(0.15, st + 0.012);
+        g.gain.exponentialRampToValueAtTime(0.0001, st + 1.15);
+        var g2 = ctx.createGain(); g2.gain.value = 0.26;
+        o.connect(g); o2.connect(g2); g2.connect(g); g.connect(sfxBus);
+        o.start(st); o.stop(st + 1.25); o2.start(st); o2.stop(st + 1.25);
+      }
+      // 气声上扬，制造"从纸面浮出"的通感
+      var n = ctx.createBufferSource(); n.buffer = noiseBuf(0.6);
+      var nbp = ctx.createBiquadFilter(); nbp.type = 'bandpass'; nbp.Q.value = 2.2;
+      nbp.frequency.setValueAtTime(380, t);
+      nbp.frequency.exponentialRampToValueAtTime(3400, t + 0.46);
+      var ng = ctx.createGain();
+      ng.gain.setValueAtTime(0.0001, t);
+      ng.gain.linearRampToValueAtTime(0.055, t + 0.28);
+      ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.58);
+      n.connect(nbp); nbp.connect(ng); ng.connect(sfxBus);
+      n.start(t); n.stop(t + 0.62);
+    }
+
+    function pop(up) {
+      if (!ensure()) return;
+      var t = ctx.currentTime + 0.01;
+      var o = ctx.createOscillator(); o.type = 'triangle';
+      var f0 = up ? 620 : 900, f1 = up ? 1200 : 540;
+      o.frequency.setValueAtTime(f0, t);
+      o.frequency.exponentialRampToValueAtTime(f1, t + 0.1);
+      var g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.19, t + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.17);
+      o.connect(g); g.connect(sfxBus);
+      o.start(t); o.stop(t + 0.2);
+    }
+
+    function loadVoice(url) {
+      if (!ensure()) return;
+      if (cache[url]) return;
+      cache[url] = 'loading';
+      fetch(url).then(function (r) { return r.arrayBuffer(); })
+        .then(function (b) {
+          return new Promise(function (res, rej) {
+            // 老 Safari 只有回调式 decodeAudioData
+            var p = ctx.decodeAudioData(b, res, rej);
+            if (p && p.then) p.then(res, rej);
+          });
+        })
+        .then(function (buf) { cache[url] = buf; })
+        .catch(function () { cache[url] = null; });
+    }
+
+    function speak(url) {
+      if (!ensure() || muted) return;
+      var buf = cache[url];
+      if (!buf || buf === 'loading') { loadVoice(url); return; }
+      var s = ctx.createBufferSource();
+      s.buffer = buf; s.connect(sfxBus); s.start();
+    }
+
+    function preload() {
+      if (!ensure()) return;
+      loadVoice('assets/voice_intro.mp3');
+    }
+
+    function setMuted(m) {
+      muted = m;
+      if (ctx && master) {
+        master.gain.cancelScheduledValues(ctx.currentTime);
+        master.gain.setTargetAtTime(m ? 0.0001 : 1, ctx.currentTime, 0.04);
+      }
+    }
+
+    function unlock() {
+      var c = ensure();
+      if (c && c.state === 'suspended') { try { c.resume(); } catch (e) {} }
+    }
+
+    return {
+      ensure: ensure, unlock: unlock, startAmbient: startAmbient,
+      chime: chime, pop: pop, speak: speak, preload: preload,
+      setMuted: setMuted, isMuted: function () { return muted; }
+    };
+  })();
+
+  // ==================== 模型加载（带真实进度） ====================
+  var MODEL_URL = 'assets/model_v3.glb';
+  var modelReady = false, loadProgress = 0;
+  var bootEl = document.getElementById('boot');
+  var bootFill = document.getElementById('bootFill');
+  var bootPct = document.getElementById('bootPct');
+  var bootNote = document.getElementById('bootNote');
+  var bootDone = false;
+  var loadFailTimer = null;
+
+  function setBootProgress(p, note) {
+    loadProgress = Math.max(loadProgress, Math.min(1, p));
+    var pct = Math.round(loadProgress * 100);
+    if (bootFill) bootFill.style.width = pct + '%';
+    if (bootPct) bootPct.textContent = pct + '%';
+    if (note && bootNote) bootNote.textContent = note;
+  }
+
+  function showBoot() {
+    if (bootDone || modelReady) return;
+    bootEl.classList.add('show');
+    // 下一帧再加 in，保证过渡生效
+    setTimeout(function () { bootEl.classList.add('in'); }, 20);
+  }
+
+  function finishBoot() {
+    if (bootDone) return;
+    bootDone = true;
+    setBootProgress(1, '准备就绪');
+    if (loadFailTimer) { clearTimeout(loadFailTimer); loadFailTimer = null; }
+    bootEl.classList.add('done');
+    setTimeout(function () { bootEl.classList.remove('show', 'in', 'done'); }, 480);
+  }
+
+  function applyModel(url) {
+    dancer.setAttribute('gltf-model', 'url(' + url + ')');
+  }
+
+  function prefetchModel() {
+    if (!window.fetch || !window.Blob || !window.URL || !URL.createObjectURL) {
+      setBootProgress(0.3, '直连加载');
+      applyModel(MODEL_URL);
+      return;
+    }
+    fetch(MODEL_URL, { cache: 'force-cache' }).then(function (res) {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      var total = parseInt(res.headers.get('content-length') || '0', 10);
+      var body = res.body;
+      if (!body || !body.getReader) {
+        // 老浏览器没有流式 reader，退化为整体下载
+        return res.arrayBuffer().then(function (b) {
+          setBootProgress(0.82, '解析模型');
+          applyModel(URL.createObjectURL(new Blob([b], { type: 'model/gltf-binary' })));
+        });
+      }
+      var reader = body.getReader();
+      var chunks = [], got = 0;
+      function pump() {
+        return reader.read().then(function (r) {
+          if (r.done) {
+            var blob = new Blob(chunks, { type: 'model/gltf-binary' });
+            chunks = null;
+            setBootProgress(0.85, '解析模型');
+            applyModel(URL.createObjectURL(blob));
+            return;
+          }
+          chunks.push(r.value);
+          got += r.value.length;
+          var p = total ? got / total : Math.min(0.8, got / (2.6 * 1024 * 1024));
+          setBootProgress(p * 0.85, '加载模型');
+          return pump();
+        });
+      }
+      return pump();
+    }).catch(function (e) {
+      console.warn('[AR] prefetch failed, fallback', e);
+      setBootProgress(0.2, '直连加载');
+      applyModel(MODEL_URL);
+    });
+  }
 
   // ---------- 模型加载：按海报比例自动定尺寸 ----------
   // 蒙皮网格不能用 Box3.setFromObject（骨骼矩阵未就绪会得到空盒），改用几何体包围盒
@@ -252,6 +1045,20 @@
     return box;
   }
 
+  function findAction(clipName, fallbackIdx) {
+    if (actionsByName[clipName]) return actionsByName[clipName];
+    var clips = (model && model.animations) || [];
+    for (var i = 0; i < clips.length; i++) {
+      if (clips[i].name === clipName) return actionsByName[clipName] || null;
+    }
+    if (clips[fallbackIdx]) {
+      var a = mixer.clipAction(clips[fallbackIdx]);
+      a.setLoop(THREE.LoopRepeat, Infinity);
+      return a;
+    }
+    return null;
+  }
+
   dancer.addEventListener('model-loaded', function (e) {
     model = e.detail.model;
     var box = computeLocalBox(model);
@@ -261,40 +1068,186 @@
 
     var charH = POSTER_H * (CHAR_FEET_PCT - CHAR_HEAD_PCT);   // 角色应占的 AR 高度
     modelScale = charH / size.y;
+    charWorldH = size.y * modelScale;
     dancer.setAttribute('scale', { x: modelScale, y: modelScale, z: modelScale });
 
     // 让模型脚底对齐海报上角色的脚底位置，水平居中
     var feetY = POSTER_H * (0.5 - CHAR_FEET_PCT);
     baseY = feetY - box.min.y * modelScale;
+    boardCharHalfW = (size.x * modelScale) / 2;   // 鸟人真实半宽，说明牌据此站位
+    boardFeetY = feetY;                            // 脚底平面 = 说明牌立地高度
     pivot.setAttribute('position', { x: 0, y: baseY, z: START_Z });
+    layoutBoard();
 
-    // 动画
+    // 动画：把所有 clip 建成 action，按名字索引，供点击切换
     var clips = model.animations || [];
     if (clips.length) {
       mixer = new THREE.AnimationMixer(model);
-      action = mixer.clipAction(clips[0]);
-      action.setLoop(THREE.LoopRepeat, Infinity);
-      action.play();
+      actionsByName = {};
+      for (var i = 0; i < clips.length; i++) {
+        var a = mixer.clipAction(clips[i]);
+        a.setLoop(THREE.LoopRepeat, Infinity);
+        a.clampWhenFinished = false;
+        actionsByName[clips[i].name] = a;
+      }
+      // 默认播放第一支舞（生命律动），并同步说明牌
+      var first = actionsByName[DANCES[0].clip] || mixer.clipAction(clips[0]);
+      first.reset().play();
+      action = first;
       mixer.timeScale = 0.34;      // 苏醒般慢速
+      updateCardText();
     }
-    window.__arnModel = { size: size, scale: modelScale, clips: clips.length };
+
+    modelReady = true;
+    setBootProgress(1, '准备就绪');
+    finishBoot();
+
+    // 若用户在模型到货前就已经对准了海报，这里补一次出场
+    if (hasTracked && state === 'idle') startSequence();
+
+    window.__arnModel = {
+      size: size, scale: modelScale, clips: clips.length,
+      names: clips.map(function (c) { return c.name; })
+    };
     console.log('[AR] model ready', size, 'scale', modelScale, 'clips', clips.length);
   });
 
-  // ---------- 追踪事件 ----------
+  // ==================== 舞蹈切换 ====================
+  function setDance(idx, opts) {
+    opts = opts || {};
+    if (!mixer || !model) return;
+    idx = ((idx % DANCES.length) + DANCES.length) % DANCES.length;
+    var cfg = DANCES[idx];
+    var clips = model.animations || [];
+    var next = actionsByName[cfg.clip];
+    if (!next) {
+      // 名字对不上时按顺序兜底
+      var fi = -1;
+      for (var i = 0; i < DANCES.length; i++) if (DANCES[i].clip === cfg.clip) fi = i;
+      if (fi >= 0 && clips[fi]) {
+        next = mixer.clipAction(clips[fi]);
+        next.setLoop(THREE.LoopRepeat, Infinity);
+        actionsByName[cfg.clip] = next;
+      }
+    }
+    if (!next) return;
+    if (action === next && !opts.force) return;
+
+    next.reset();
+    next.enabled = true;
+    next.setEffectiveTimeScale(1);
+    next.setEffectiveWeight(1);
+    next.play();
+    if (action && action !== next) {
+      action.crossFadeTo(next, 0.45, false);
+    }
+    action = next;
+    curDance = idx;
+    updateCardText();
+
+    if (!opts.silent) {
+      // 只给切换音效，不再念一段介绍（介绍只在角色第一次出场时说一次）
+      AudioSys.pop(idx === 1);
+    }
+  }
+
+  function switchDance() {
+    if (state !== 'dancing') return;
+    setDance(curDance + 1, {});
+    hasSwitched = true;
+    tapTip.classList.remove('show');
+  }
+
+  // ==================== 点击拾取 ====================
+  var raycaster = null, ndc = null;
+  function initPicker() {
+    if (!THREE) return;
+    raycaster = new THREE.Raycaster();
+    ndc = new THREE.Vector2();
+  }
+
+  function hitDancer(cx, cy) {
+    if (!model || !raycaster) return false;
+    var cam = scene.camera;
+    if (!cam) return false;
+    var W = window.innerWidth, H = window.innerHeight;
+    ndc.x = (cx / W) * 2 - 1;
+    ndc.y = -(cy / H) * 2 + 1;
+    raycaster.setFromCamera(ndc, cam);
+    var hits = raycaster.intersectObject(model, true);
+    if (hits.length > 0) return true;
+
+    // 兜底：蒙皮网格的射线检测走的是 bind-pose 包围盒，姿势变化后可能偏；
+    // 若点击点落在角色屏幕投影中心附近，也算命中（半径取短边的 0.34）
+    if (!_wp) _wp = new THREE.Vector3();
+    pivot.object3D.getWorldPosition(_wp);
+    _wp.y += charWorldH * 0.5;
+    _wp.project(cam);
+    if (_wp.z > 1) return false;
+    var sx = (_wp.x * 0.5 + 0.5) * W;
+    var sy = (-_wp.y * 0.5 + 0.5) * H;
+    var dx = cx - sx, dy = cy - sy;
+    var rad = Math.min(W, H) * 0.34;
+    return (dx * dx + dy * dy) <= rad * rad;
+  }
+
+  function onPointerUp(e) {
+    if (!arStarted || state !== 'dancing') return;
+    var t = e.target;
+    if (t && t.closest && t.closest('#muteBtn, #retry, #startBtn, #intro, #err, #boot')) return;
+    var cx = e.clientX, cy = e.clientY;
+    if (cx === undefined && e.changedTouches) { cx = e.changedTouches[0].clientX; cy = e.changedTouches[0].clientY; }
+    if (cx === undefined) return;
+    if (hitDancer(cx, cy)) switchDance();
+  }
+  document.addEventListener('pointerup', onPointerUp, { passive: true });
+
+  // ==================== 追踪事件 ====================
+  // ======== 追踪丢失时把"镜头前的实体"整体收起来 ========
+  // 根因修复：MindAR 一旦判定丢失，targetEl 会停止更新，并保留"最后一次相对相机的位姿"。
+  // 挂在它下面的小鸟、说明牌、遮挡网格就会钉在镜头前方 —— 这就是"像贴在手机屏幕上、
+  // 把镜头转开它也不走"的真正来源（不是模型挂到了相机，而是锚点挂了相机最后的位置）。
+  // 处理：丢失就把这些实体隐藏；重新识别到海报时原地显示，位置与动作进度全部保留。
+  function hideStage() {
+    if (pivot) pivot.setAttribute('visible', false);
+    if (occluderEl) occluderEl.setAttribute('visible', false);
+    boardVisible = false;
+    boardAlpha = 0;
+    setBoardOpacity(0);
+    if (boardEl) boardEl.setAttribute('visible', false);
+  }
+
+  function showStage() {
+    if (pivot) pivot.setAttribute('visible', true);
+  }
+
   targetEl.addEventListener('targetFound', function () {
     hasTracked = true;
     hint.classList.add('hide');
     retryBtn.classList.remove('hidden');
+    showStage();
+    if (hasEmerged) { resumeOnSpot(); return; }   // 已经出过场：不算重新出场
     startSequence();
   });
 
   targetEl.addEventListener('targetLost', function () {
     retryBtn.classList.add('hidden');
-    if (!arStarted) return;
+    tapTip.classList.remove('show');
+    if (!arStarted) { hideCard(); hideStage(); return; }
     hint.classList.remove('hide');
+
+    // 已经出过场之后，只收起镜头前的实体：模型位置/动作/出场进度一律不动，
+    // 转回海报时它还站在原地接着跳，不会重新从海报里钻一次。
+    if (hasEmerged) {
+      hideStage();
+      hint.innerHTML = '<b>暂时看不见小鸟了</b> · 转回海报，它还站在原地跳';
+      return;
+    }
+
     hint.innerHTML = '<b>海报已丢失</b> · 重新对准海报试试';
-    // 回到初始状态，下次识别重新走出
+    hideCard();
+    hideStage();
+    // 还没走完出场就丢了：允许复位重来
     if (state !== 'idle') {
       state = 'idle';
       danceStarted = false;
@@ -302,29 +1255,62 @@
       dancer.setAttribute('rotation', { x: 0, y: 0, z: 0 });
       if (mixer) { mixer.stopAllAction(); mixer.timeScale = 0.34; }
     }
+    resetOccluder();
+    // 复位会重新打开遮挡网格，但此刻已经丢了跟踪，它同样会钉在镜头前 —— 立刻关掉
+    if (occluderEl) occluderEl.setAttribute('visible', false);
   });
+
+  // 出过场之后再识别到海报：直接在落点继续跳，不重播出场
+  function resumeOnSpot() {
+    if (!model) return;
+    state = 'dancing';
+    danceStarted = true;
+    pivot.setAttribute('position', { x: 0, y: baseY, z: END_Z });
+    dancer.setAttribute('rotation', { x: 0, y: 0, z: 0 });
+    if (mixer) mixer.timeScale = 1.0;
+    retireOccluder(performance.now());   // 人已经在纸外，不该再被海报挡住
+    boardVisible = true;
+    boardAlpha = 1;
+    setBoardOpacity(1);
+    if (boardEl) boardEl.setAttribute('visible', true);
+  }
 
   function startSequence() {
     if (!model) return;
+    showStage();          // 兜底：此前若因丢跟踪被收起，这里必须重新挂出来
     state = 'emerging';
     emergeT0 = performance.now();
     danceStarted = false;
     pivot.setAttribute('position', { x: 0, y: baseY, z: START_Z });
     dancer.setAttribute('rotation', { x: 0, y: 0, z: 0 });
+    resetOccluder();   // 新一轮浮出：遮挡重新生效
     if (mixer && action) {
       mixer.stopAllAction();
+      action = actionsByName[DANCES[curDance].clip] || action;
+      action.enabled = true;
+      action.setEffectiveWeight(1);
       action.reset().play();
       mixer.timeScale = 0.34;
     }
+    AudioSys.chime();
   }
 
-  // ---------- 每帧驱动 ----------
+  // ==================== 每帧驱动 ====================
   var lastT = 0;
   scene.addEventListener('renderstart', function () {
+    setupOccluder();
+    setupInfoBoard();
+    initPicker();
     var renderLoop = function (t) {
       requestAnimationFrame(renderLoop);
       var dt = lastT ? Math.min((t - lastT) / 1000, 0.06) : 0.016;
       lastT = t;
+
+      // 贴屏兜底：MindAR 一旦把锚点判为"看不见"，本帧就把镜头前的实体全部收起。
+      // 不依赖 targetLost 事件是否送达（事件漏发时模型会钉在取景框中央，看着就是"贴在屏幕上")。
+      if (targetEl && targetEl.object3D && !targetEl.object3D.visible) {
+        if (pivot && pivot.getAttribute('visible') !== false) hideStage();
+      }
 
       if (state === 'emerging' && model) {
         var p = Math.min((t - emergeT0) / EMERGE_DUR, 1);
@@ -337,22 +1323,58 @@
 
         if (mixer) {
           mixer.timeScale = lerp(0.34, 1.0, Math.min(1, p / 0.8));
-          if (p >= 1) {
-            state = 'dancing';
-            pivot.setAttribute('position', { x: 0, y: baseY, z: END_Z });
-            dancer.setAttribute('rotation', { x: 0, y: 0, z: 0 });
-            mixer.timeScale = 1.0;
+        }
+
+        if (p >= 1) {
+          state = 'dancing';
+          hasEmerged = true;   // 落地完成：从此钉在世界位置
+          pivot.setAttribute('position', { x: 0, y: baseY, z: END_Z });
+          dancer.setAttribute('rotation', { x: 0, y: 0, z: 0 });
+          if (mixer) mixer.timeScale = 1.0;
+          // 出场完成：说明牌浮出 + 点击引导
+          showCard();
+          if (!hasSwitched) {
+            setTimeout(function () {
+              if (state === 'dancing' && !hasSwitched) tapTip.classList.add('show');
+            }, 1200);
+            setTimeout(function () { tapTip.classList.remove('show'); }, 11000);
+          }
+          // 开场介绍：只说的是"第一次出场"这一遍。
+          // 之后重新扫描、丢跟踪再回来、切舞，都不会再念。
+          if (!introSpoken) {
+            setTimeout(function () {
+              if (state === 'dancing' && !introSpoken) {
+                introSpoken = true;
+                AudioSys.speak('assets/voice_intro.mp3');
+              }
+            }, 900);
           }
         }
+
+        // 出场结束：遮挡退场（默认立即彻底退场；?dissolve=1 时 0.4s 由中间向外消散）
+        // 放在 mixer 判断之外，确保无动画数据时也能退场
+        if (p >= 1) retireOccluder(t);
       }
 
+      updateOccluder(t);
+      updateBoardFade(dt);
       if (mixer) mixer.update(dt);
     };
     requestAnimationFrame(renderLoop);
   });
 
-  // ---------- 启动 ----------
-  // ---------- 摄像头故障诊断 ----------
+  // ==================== 静音开关 ====================
+  muteBtn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    var m = !AudioSys.isMuted();
+    AudioSys.setMuted(m);
+    muteBtn.classList.toggle('off', m);
+    document.getElementById('waveA').style.opacity = m ? '0.25' : '1';
+    document.getElementById('waveB').style.opacity = m ? '0.25' : '1';
+  });
+  muteBtn.classList.add('hidden');
+
+  // ==================== 摄像头故障诊断 ====================
   var cameraReady = false;
   var camTimer = null;
 
@@ -408,10 +1430,32 @@
   }
 
   startBtn.addEventListener('click', function () {
+    // 音频必须在用户手势里解锁（iOS 硬性要求）
+    AudioSys.unlock();
+    AudioSys.preload();
+    AudioSys.startAmbient();
+
     intro.classList.add('fade');
     arStarted = true;
     setTimeout(function () { intro.classList.add('hidden'); }, 500);
     hint.classList.remove('hide');
+    muteBtn.classList.remove('hidden');
+
+    // 模型还没好就先压一层进度，就绪后自动淡出
+    if (!modelReady) {
+      showBoot();
+      setBootProgress(Math.max(loadProgress, 0.02), '加载模型');
+      if (loadFailTimer) clearTimeout(loadFailTimer);
+      loadFailTimer = setTimeout(function () {
+        if (modelReady) return;
+        bootNote.textContent = '网络较慢，仍在加载';
+        loadFailTimer = setTimeout(function () {
+          if (modelReady) return;
+          bootNote.textContent = '模型加载失败，请刷新页面重试';
+          bootPct.textContent = '—';
+        }, 16000);
+      }, 12000);
+    }
 
     var env = checkEnv();
     if (!env) return;
@@ -454,6 +1498,10 @@
     console.warn('[AR] rejection', ev.reason);
   });
 
+  // 页面一加载就开始预取模型，用户点开始时大概率已就绪
+  prefetchModel();
+  updateCardText();
+
   // 用于自动化验证的探针
   window.__arState = function () {
     return {
@@ -461,11 +1509,26 @@
       tracked: hasTracked,
       modelReady: !!model,
       clips: model ? (model.animations || []).length : 0,
+      clipNames: model ? (model.animations || []).map(function (c) { return c.name; }) : [],
+      dance: DANCES[curDance].id,
+      danceIndex: curDance,
       mixer: !!mixer,
       pivotZ: pivot ? pivot.getAttribute('position').z : null,
-      hasMind: true
+      hasMind: true,
+      occluder: occState,
+      occluderVisible: !!(occluderEl && occMesh && occMat && occState !== 'off'),
+      occRenderOrder: occMesh ? occMesh.renderOrder : null,
+      occColorWrite: occMat ? occMat.colorWrite : null,
+      occDepthWrite: occMat ? occMat.depthWrite : null,
+      occProg: occMat ? occMat.uniforms.uProg.value : null,
+      dissolve: DISSOLVE,
+      loadProgress: loadProgress,
+      cardShown: boardVisible,
+      cardTransform: infoCard.style.transform,
+      muted: AudioSys.isMuted()
     };
   };
+  window.__arSwitch = function (i) { setDance(typeof i === 'number' ? i : curDance + 1, {}); return DANCES[curDance].id; };
 })();
 </script>
 </body>
